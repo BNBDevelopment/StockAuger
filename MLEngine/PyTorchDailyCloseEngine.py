@@ -1,10 +1,14 @@
+from datetime import datetime
+
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
 def myProject(stockDataPath):
     stockDataPath = '..\data\AMZN.csv'
-    data = np.genfromtxt(stockDataPath, delimiter=",",usecols=np.arange(0,7), skip_header=True)
+
+    stringDateConverter = lambda x: datetime.strptime(x.decode('ascii'), '%Y-%m-%d')
+    data = np.genfromtxt(stockDataPath, delimiter=",",usecols=np.arange(0,7), skip_header=True)#, converters = {0: stringDateConverter})
     print("data:" + str(data))
 
     num_rows = data.shape[0]
@@ -33,6 +37,10 @@ def myProject(stockDataPath):
     input_test_data = input_test_data[..., np.newaxis]
     output_test_data = output_test_data[..., np.newaxis]
 
+    #input_training_data[:, :, 0] = 0
+    #output_training_data[:, :, 0] = 0
+    #input_test_data[:, :, 0] = 0
+    #output_test_data[:, :, 0] = 0
 
     number_of_prev_days_to_examine = 30  # choose sequence length
     print('input_training_data.shape = ', input_training_data.shape)
@@ -49,12 +57,54 @@ def myProject(stockDataPath):
 
     #Creation of the model
 
-    input_dim = 1
-    hidden_dim = 32
-    num_layers = 3
-    lstmModel = torch.nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
-    #lstmModel.hidden = lstmModel.init_hidden()
+    # Build model
+    #####################
+    input_dimensions = 1
+    hidden_dimensions = 32
+    number_of_features = 1
+    output_dimensions = 1
+    number_layers = 1
 
+    # Here we define our model as a class
+    class LSTM(torch.nn.Module):
+        def __init__(self, input_dim, hidden_dim, num_layers, output_dim, number_of_features):
+            super(LSTM, self).__init__()
+            #Setting hidden dimensions
+            self.hidden_dim = hidden_dim
+
+            #Setting Number of hidden layers within model - we only want one layer (only h[0] exists)
+            self.num_layers = 1
+
+            #batch_size: the number of training examples utilized in one iteration
+            #seq_len: 384
+            #input_size / num_features: reflects the number of features
+
+            # batch_first=True causes input/output tensors to be of shape
+            # LSTM requires input as (seq_len, batch, input_size) - 3 dimensions
+            self.lstm = torch.nn.LSTM(input_dim, hidden_dim, number_of_features, batch_first=True)
+
+            # Readout layer
+            self.fc = torch.nn.Linear(hidden_dim, output_dim)
+
+        def forward(self, x):
+            # Initialize hidden state with zeros
+            h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_dim).requires_grad_()
+
+            # Initialize cell state
+            c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_dim).requires_grad_()
+
+            # We need to detach as we are doing truncated backpropagation through time (BPTT)
+            # If we don't, we'll backprop all the way to the start even after going through another batch
+            out, (hn, cn) = self.lstm(x, (h0.detach(), c0.detach()))
+
+            # Index hidden state of last time step
+            # out.size() --> 100, 32, 100
+            # out[:, -1, :] --> 100, 100 --> just want last time step hidden states!
+            out = self.fc(out[:, -1, :])
+            # out.size() --> 100, 10
+            return out
+
+    lstmModel = LSTM(input_dim=input_dimensions, hidden_dim=hidden_dimensions, output_dim=output_dimensions, num_layers=number_layers, number_of_features=number_of_features)
 
     loss_fn = torch.nn.MSELoss()
 
@@ -96,6 +146,9 @@ def myProject(stockDataPath):
     plt.plot(history_of_loss_fn_calculations, label="Training loss")
     plt.legend()
     plt.show()
+
+    y_test_pred = lstmModel(tensor_input_test_data)
+    print("OUTPUT: " + str(y_test_pred))
 
 
 myProject('..\data\AMZN.csv')
