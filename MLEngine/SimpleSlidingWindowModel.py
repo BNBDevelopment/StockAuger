@@ -1,6 +1,8 @@
-import pandas
 import torch
 import matplotlib.pyplot as plt
+import numpy
+#from numpy import genfromtxt
+from sklearn.model_selection import train_test_split
 
 class LSTM(torch.nn.Module):
 
@@ -11,7 +13,7 @@ class LSTM(torch.nn.Module):
         self.num_layers = numInputParams
         self.input_size = numHiddenDimensions
         self.hidden_size = numLayers
-        self.seq_length = windowSize
+        self.seq_length = 3
 
         self.lstm = torch.nn.LSTM(input_size = numInputParams,
                                  hidden_size = numHiddenDimensions,
@@ -20,12 +22,14 @@ class LSTM(torch.nn.Module):
 
         self.fc = torch.nn.Linear(numHiddenDimensions, numOutputTypes)
 
-    def foward(self, input_x):
-        h_0 = torch.zeros(self.num_layers, input_x.input_xsize(0), self.hidden_dim).requires_grad_()
-        c_0 = torch.zeros(self.num_layers, input_x.size(0), self.hidden_dim).requires_grad_()
+    def forward(self, input_x):
+        h_0 = torch.zeros(self.num_layers, input_x.size(0), self.hidden_size).requires_grad_()
+        c_0 = torch.zeros(self.num_layers, input_x.size(0), self.hidden_size).requires_grad_()
 
         #Propogate forward
-        ula, h_out = self.lstm(input_x, (h_0, c_0))
+        input_x.unsqueeze(0)
+        input_x.unsqueeze(1)
+        out, h_out = self.lstm(input_x, (h_0, c_0))
         h_out = h_out.view(-1, self.hidden_size)
         out = self.fc(h_out)
         return out
@@ -34,23 +38,26 @@ def processDataTickerFile(ticker):
     file_path = "..\\data\\" + str(ticker).upper() + ".csv"
     print("file_path: " + file_path)
 
-    all_data = pandas.read_csv(file_path)
-    all_data.head()
+    all_data = numpy.genfromtxt(file_path, delimiter=',')
     #print("all_data: " + str(all_data))
 
-    train_data = all_data.sample(frac=0.8)  # random state is a seed value
-    test_data = all_data.drop(train_data.index)
+    all_data.shape
+    train_data, test_data = train_test_split(all_data, test_size=0.2, random_state=42, shuffle=True)
+
 
     #Process training data
-    train_output = train_data['Close']
-    train_input = train_data.drop('Close', axis=1)
-    train_input = train_input.drop('Adj Close', axis=1)
+    train_output = torch.tensor(train_data[:,4])
+    train_input = numpy.delete(train_data, 5, 1) #Drop adj close
+    train_input = numpy.delete(train_input, 4, 1) #Drop close
+    train_input = torch.tensor(train_input)
 
 
     #Process test data
-    test_output = test_data['Close']
-    test_input = test_data.drop('Close', axis=1)
-    test_input = test_input.drop('Adj Close', axis=1)
+    test_output = torch.tensor(test_data[:,4])
+    test_input = numpy.delete(test_data, 5, 1) #Drop adj close
+    test_input = numpy.delete(test_input, 4, 1) #Drop close
+    test_input = torch.tensor(test_input)
+
 
     return train_input,train_output,test_input,test_output
 
